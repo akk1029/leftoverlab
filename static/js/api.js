@@ -109,6 +109,9 @@ export const api = {
   // --- recipes ---
   listRecipes: (filters) => request(`/recipes${qs(filters)}`),
   recommendations: (limit = 10) => request(`/recipes/recommendations${qs({ limit })}`),
+  generateFromMealDB: (opts = {}) =>
+    request(`/recipes/generate${qs({ limit: opts.limit, respect_dietary: opts.respectDietary, respect_allergies: opts.respectAllergies })}`),
+  importGenerated: (mealdbId) => request(`/recipes/generate/${mealdbId}/import`, { method: "POST" }),
   savedRecipes: () => request("/recipes/saved"),
   getRecipe: (id) => request(`/recipes/${id}`),
   createRecipe: (payload) => request("/recipes", { method: "POST", body: payload }),

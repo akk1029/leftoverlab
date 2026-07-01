@@ -156,28 +156,118 @@ function createModal(reload) {
 export async function renderRecommendations(root) {
   root.innerHTML = `
     <h1 class="view-title">Recommended for you</h1>
-    <p class="muted">Ranked by how much of each recipe you already have in your inventory.</p>
-    <div id="recs">${loading()}</div>`;
+
+    <div class="card">
+      <div class="card-head">
+        <h2>🍲 Generate from TheMealDB</h2>
+        <button id="genBtn">Generate recipes</button>
+      </div>
+      <p class="muted">Real recipes matched to your inventory. Automatically respects your
+        dietary preference and filters out your declared allergies.</p>
+      <div class="row-actions genopts">
+        <label class="check"><input type="checkbox" id="optDietary" checked /> Respect dietary preference</label>
+        <label class="check"><input type="checkbox" id="optAllergy" checked /> Exclude my allergies</label>
+      </div>
+      <div id="genResults" class="recipe-grid" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h2>📖 From your recipe library</h2>
+      <p class="muted">Ranked by how much of each saved/seeded recipe you already have.</p>
+      <div id="recs">${loading()}</div>
+    </div>`;
+
+  // --- local library recommendations ---
   const box = $("#recs", root);
   try {
     const recs = await api.recommendations(20);
     if (!recs.length) {
-      box.innerHTML = `<p class="muted">No matches yet. Add ingredients that appear in recipes (and seed some recipes).</p>`;
-      return;
+      box.innerHTML = `<p class="muted">No matches yet. Add ingredients, and seed/create some recipes.</p>`;
+    } else {
+      box.innerHTML = "";
+      recs.forEach((r) => {
+        const pct = Math.round(r.match_score * 100);
+        box.insertAdjacentHTML("beforeend", `
+          <div class="rec-row">
+            <div class="card-head"><h3>${escapeHtml(r.recipe.title)} <span class="badge">${escapeHtml(r.recipe.category)}</span></h3><strong>${pct}%</strong></div>
+            <div class="bar"><span style="width:${pct}%"></span></div>
+            <div class="meta muted">Have: ${r.matched_ingredients.map(escapeHtml).join(", ") || "—"}<br>Need: ${r.missing_ingredients.map(escapeHtml).join(", ") || "—"}</div>
+          </div>`);
+      });
     }
-    box.innerHTML = "";
-    recs.forEach((r) => {
-      const pct = Math.round(r.match_score * 100);
-      box.insertAdjacentHTML("beforeend", `
-        <div class="card rec">
-          <div class="card-head"><h3>${escapeHtml(r.recipe.title)} <span class="badge">${escapeHtml(r.recipe.category)}</span></h3><strong>${pct}%</strong></div>
-          <div class="bar"><span style="width:${pct}%"></span></div>
-          <div class="meta muted">Have: ${r.matched_ingredients.map(escapeHtml).join(", ") || "—"}<br>Need: ${r.missing_ingredients.map(escapeHtml).join(", ") || "—"}</div>
-        </div>`);
-    });
   } catch (err) {
     box.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
   }
+
+  // --- TheMealDB generation ---
+  const grid = $("#genResults", root);
+  $("#genBtn", root).addEventListener("click", async () => {
+    grid.innerHTML = loading("Searching TheMealDB for recipes you can make…");
+    try {
+      const res = await api.generateFromMealDB({
+        limit: 12,
+        respectDietary: $("#optDietary", root).checked,
+        respectAllergies: $("#optAllergy", root).checked,
+      });
+      if (!res.recipes.length) {
+        grid.innerHTML = `<p class="muted">No safe matches found. Add more common ingredients (e.g. chicken, tomato, onion, rice) to your inventory, or loosen the filters above.</p>`;
+        return;
+      }
+      const note = `Preference: <strong>${escapeHtml(res.dietary_preference)}</strong>` +
+        (res.allergies_applied.length ? ` · avoiding: ${res.allergies_applied.map(escapeHtml).join(", ")}` : "");
+      grid.innerHTML = `<p class="muted" style="grid-column:1/-1">${note}</p>`;
+      res.recipes.forEach((r) => grid.appendChild(genCard(r)));
+    } catch (err) {
+      grid.innerHTML = `<p class="muted">${escapeHtml(err.message)}</p>`;
+    }
+  });
+}
+
+function genCard(r) {
+  const pct = Math.round(r.match_score * 100);
+  const el = h(`
+    <div class="card recipe-card gen-card">
+      ${r.thumbnail ? `<img class="thumb" src="${escapeHtml(r.thumbnail)}" alt="" loading="lazy" />` : ""}
+      <span class="badge">${escapeHtml(r.category || "Recipe")}${r.area ? " · " + escapeHtml(r.area) : ""}</span>
+      <h3>${escapeHtml(r.title)}</h3>
+      <div class="bar"><span style="width:${pct}%"></span></div>
+      <div class="meta muted">${pct}% on hand · need: ${r.missing_ingredients.slice(0, 6).map(escapeHtml).join(", ") || "—"}</div>
+      <div class="row-actions">
+        <button class="small" data-act="view">View</button>
+        <button class="small secondary" data-act="import">＋ Import</button>
+      </div>
+    </div>`);
+  el.querySelector('[data-act="import"]').addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try { const saved = await api.importGenerated(r.mealdb_id); toast(`Imported as ${saved.id}.`); }
+    catch (err) { toast(err.message, true); e.target.disabled = false; }
+  });
+  el.querySelector('[data-act="view"]').addEventListener("click", () => genDetailModal(r));
+  return el;
+}
+
+function genDetailModal(r) {
+  const body = h(`
+    <div>
+      ${r.thumbnail ? `<img class="thumb-lg" src="${escapeHtml(r.thumbnail)}" alt="" />` : ""}
+      <span class="badge">${escapeHtml(r.category || "Recipe")}${r.area ? " · " + escapeHtml(r.area) : ""}</span>
+      <div class="meta muted">${Math.round(r.match_score * 100)}% of ingredients on hand${r.tags.length ? " · " + r.tags.map(escapeHtml).join(", ") : ""}</div>
+      <h4>Ingredients</h4>
+      <ul>${r.ingredients.map((i) => {
+        const have = r.matched_ingredients.includes(i);
+        return `<li>${have ? "✅ " : "🛒 "}${escapeHtml(i)}</li>`;
+      }).join("")}</ul>
+      <h4>Instructions</h4>
+      <p class="pre">${escapeHtml(r.instructions || "—")}</p>
+      ${r.youtube_url ? `<p><a href="${escapeHtml(r.youtube_url)}" target="_blank" rel="noopener">▶ Watch on YouTube</a></p>` : ""}
+      <button data-act="import">＋ Import to my recipes</button>
+    </div>`);
+  const close = modal(r.title, body);
+  body.querySelector('[data-act="import"]').addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try { const saved = await api.importGenerated(r.mealdb_id); toast(`Imported as ${saved.id}.`); close(); }
+    catch (err) { toast(err.message, true); e.target.disabled = false; }
+  });
 }
 
 // ---------------- Saved recipes ----------------

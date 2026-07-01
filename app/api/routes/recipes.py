@@ -11,14 +11,29 @@ from app.core.enums import RecipeCategory
 from app.core.ids import next_id
 from app.models.ingredient import Ingredient
 from app.models.recipe import Recipe, SavedRecipe
+from app.schemas.generate import GeneratedRecipe, GenerateResponse
 from app.schemas.recipe import (
     RecipeCreate,
     RecipePublic,
     RecipeRecommendation,
     RecipeUpdate,
 )
+from app.services.dietary import parse_allergies
+from app.services.themealdb import generate_from_inventory, lookup_meal
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
+
+# TheMealDB categories don't map 1:1 onto our meal-type enum; approximate.
+_MEALDB_CATEGORY_MAP = {
+    "Breakfast": RecipeCategory.BREAKFAST,
+    "Dessert": RecipeCategory.DESSERT,
+    "Starter": RecipeCategory.SNACK,
+    "Side": RecipeCategory.SNACK,
+}
+
+
+def _map_category(mealdb_category: str | None) -> RecipeCategory:
+    return _MEALDB_CATEGORY_MAP.get(mealdb_category or "", RecipeCategory.DINNER)
 
 
 def _tokenize(text: str) -> set[str]:
@@ -126,6 +141,74 @@ def list_saved(db: DbSession, current_user: CurrentUser) -> list[Recipe]:
         .all()
     )
     return rows
+
+
+@router.get("/generate", response_model=GenerateResponse)
+async def generate_from_themealdb(
+    db: DbSession,
+    current_user: CurrentUser,
+    limit: int = Query(default=10, ge=1, le=25),
+    respect_dietary: bool = Query(default=True, description="Honour the user's dietary preference."),
+    respect_allergies: bool = Query(default=True, description="Exclude recipes with allergens."),
+) -> GenerateResponse:
+    """Generate real recipes from TheMealDB using the user's inventory (FR06).
+
+    Only recipes compatible with the user's dietary preference and free of their
+    declared allergens are returned, ranked by how much of each recipe you
+    already have on hand.
+    """
+    inventory = [
+        i.name for i in db.query(Ingredient).filter(Ingredient.owner_id == current_user.id).all()
+    ]
+    allergies = parse_allergies(current_user.allergies)
+
+    meals = await generate_from_inventory(
+        inventory,
+        preference=current_user.dietary_preference,
+        allergies=allergies,
+        limit=limit,
+        respect_dietary=respect_dietary,
+        respect_allergies=respect_allergies,
+    )
+    return GenerateResponse(
+        count=len(meals),
+        dietary_preference=current_user.dietary_preference.value,
+        allergies_applied=allergies if respect_allergies else [],
+        recipes=[GeneratedRecipe(**vars(m)) for m in meals],
+    )
+
+
+@router.post("/generate/{mealdb_id}/import", response_model=RecipePublic, status_code=status.HTTP_201_CREATED)
+async def import_generated_recipe(
+    mealdb_id: str, db: DbSession, current_user: CurrentUser
+) -> Recipe:
+    """Import a TheMealDB recipe into the user's own collection (usable in
+    saving, meal plans, and shopping-list generation)."""
+    meal = await lookup_meal(mealdb_id)
+    if meal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meal not found on TheMealDB.")
+
+    # Fold TheMealDB tags + category into our comma-separated dietary_tags field.
+    tags = list(meal.tags)
+    if meal.category in ("Vegan", "Vegetarian") and meal.category not in tags:
+        tags.append(meal.category)
+
+    desc_bits = [b for b in (meal.area, meal.category) if b]
+    recipe = Recipe(
+        id=next_id(db, "REC", 3),
+        author_id=current_user.id,
+        title=meal.title,
+        category=_map_category(meal.category),
+        description=f"Imported from TheMealDB{(' · ' + ' · '.join(desc_bits)) if desc_bits else ''}."
+        + (f" Source: {meal.source_url}" if meal.source_url else ""),
+        ingredients_text="\n".join(meal.ingredients),
+        instructions=meal.instructions,
+        dietary_tags=",".join(tags) if tags else None,
+    )
+    db.add(recipe)
+    db.commit()
+    db.refresh(recipe)
+    return recipe
 
 
 @router.get("/{recipe_id}", response_model=RecipePublic)

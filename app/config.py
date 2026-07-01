@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_MB: int = 10
 
+    # TheMealDB recipe API. The public test key is "1"; override the whole base
+    # URL (including your key) via env for a paid key.
+    THEMEALDB_BASE_URL: str = "https://www.themealdb.com/api/json/v1/1"
+    THEMEALDB_TIMEOUT: float = 8.0
+
     @field_validator("DATABASE_URL")
     @classmethod
     def normalize_db_url(cls, v: str) -> str:
