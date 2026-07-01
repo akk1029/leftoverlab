@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from app import __version__
 from app.api.api import api_router
 from app.config import settings
-from app.database import Base, engine
+from app.database import init_db
 
 # Bundled minimal web UI lives in <project_root>/static.
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -23,9 +23,9 @@ import app.models  # noqa: F401
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # For a starter project we auto-create tables on startup. For real migrations,
-    # use Alembic (`alembic upgrade head`) and remove this create_all call.
-    Base.metadata.create_all(bind=engine)
+    # Auto-create tables on startup (advisory-locked so multiple Gunicorn workers
+    # don't race). For real migrations, use Alembic and remove this call.
+    init_db()
     yield
 
 
