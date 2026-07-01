@@ -1,0 +1,38 @@
+# Render Blueprint — provisions the web service + a managed PostgreSQL database.
+# Deploy by pushing this repo to GitHub and choosing "New + > Blueprint" in Render,
+# or via the Render dashboard. See README.md for step-by-step instructions.
+
+services:
+  - type: web
+    name: leftoverlab-api
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    # Render sets $PORT; bind gunicorn to it with uvicorn workers.
+    startCommand: "gunicorn app.main:app -k uvicorn.workers.UvicornWorker --workers 2 --bind 0.0.0.0:$PORT --timeout 120"
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: leftoverlab-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true          # Render generates a secure random value
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: ALGORITHM
+        value: HS256
+      - key: ENVIRONMENT
+        value: production
+      - key: BACKEND_CORS_ORIGINS
+        value: "*"
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+
+databases:
+  - name: leftoverlab-db
+    plan: free
+    region: oregon
+    databaseName: leftoverlab
+    user: leftoverlab

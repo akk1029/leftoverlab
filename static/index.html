@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LeftoverLab — Smart Kitchen</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- AUTH SCREEN -->
+  <div id="authScreen" class="auth-screen hidden">
+    <div class="auth-card card">
+      <h1 class="brand">🥗 LeftoverLab</h1>
+      <p class="muted center">AI-Powered Smart Kitchen &amp; Meal Planner</p>
+      <div class="tabs">
+        <button class="auth-tab active" data-tab="login">Log in</button>
+        <button class="auth-tab" data-tab="register">Register</button>
+      </div>
+
+      <form id="loginForm">
+        <label>Email<input name="email" type="email" required value="chef@example.com" /></label>
+        <label>Password<input name="password" type="password" required value="Tasty1!meal" /></label>
+        <button type="submit">Log in</button>
+      </form>
+
+      <form id="registerForm" class="hidden">
+        <label>Email<input name="email" type="email" required /></label>
+        <label>Full name<input name="full_name" type="text" /></label>
+        <label>Password
+          <input name="password" type="password" required />
+          <small>8+ chars, 1 uppercase, 1 number, 1 special character.</small>
+        </label>
+        <label>Dietary preference
+          <select name="dietary_preference">
+            <option>None</option><option>Vegetarian</option><option>Vegan</option>
+            <option>Halal</option><option>Gluten-Free</option>
+          </select>
+        </label>
+        <button type="submit">Create account</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- APP SHELL -->
+  <div id="appShell" class="shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">🥗 LeftoverLab</div>
+      <nav id="nav" class="nav"></nav>
+    </aside>
+
+    <div class="content">
+      <header class="topbar">
+        <button id="menuToggle" class="icon-btn menu-toggle" aria-label="Menu">☰</button>
+        <div class="spacer"></div>
+        <div class="user-chip">
+          <div class="user-info">
+            <span id="userEmail" class="user-email"></span>
+            <span id="userMeta" class="muted small"></span>
+          </div>
+          <button id="logoutBtn" class="ghost small">Log out</button>
+        </div>
+      </header>
+      <main id="view" class="view"></main>
+    </div>
+  </div>
+
+  <script type="module" src="/static/js/app.js"></script>
+</body>
+</html>
